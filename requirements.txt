@@ -1,0 +1,26 @@
+# Core dependencies
+numpy>=1.19.0
+torch>=1.7.0
+torchvision>=0.8.0
+spikingjelly==0.0.0.0.12
+opencv-python>=4.5.0
+matplotlib>=3.3.0
+tqdm>=4.50.0
+
+# Event camera processing
+numba>=0.50.0
+h5py>=3.1.0
+hdf5plugin>=2.0.0
+
+# For visualization
+imageio>=2.9.0
+
+# For ROS integration (optional)
+# These dependencies should be installed via your ROS setup
+# The following are just for reference:
+# rospkg
+# catkin_pkg
+# cv_bridge
+# geometry_msgs
+# sensor_msgs
+# mavros_msgs 
