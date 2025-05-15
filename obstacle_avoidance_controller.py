@@ -1,13 +1,15 @@
 import torch
 import numpy as np
 import time
-from spikingjelly.clock_driven import functional
+from spikingjelly.activation_based import functional
 import sys
 import os
 
-# Add the project directory to the path so we can import the network
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from network_3d.poolingNet_cat_1res import NeuronPool_Separable_Pool3d
+# Add the project directory to the path
+sys.path.append(os.path.abspath('.'))
+
+# Import the network from our patched modules
+from network_3d_patched.poolingNet_cat_1res import NeuronPool_Separable_Pool3d
 
 class SectorizedSpikeAccumulator:
     """

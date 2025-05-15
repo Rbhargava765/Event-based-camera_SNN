@@ -3,6 +3,12 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import cv2
 import torch
+import sys
+import os
+
+# Add the project directory to the path
+sys.path.append(os.path.abspath('.'))
+
 from obstacle_avoidance_controller import SectorizedSpikeAccumulator
 import time
 import argparse
@@ -146,11 +152,11 @@ def generate_test_event_data(frame_size=(480, 640), flow_direction=None, magnitu
     flow_x += np.random.normal(0, 0.1, (height, width))
     flow_y += np.random.normal(0, 0.1, (height, width))
     
-    # Create a 11-frame time sequence tensor
-    event_tensor = torch.zeros(1, 2, 11, height, width)
+    # Create a 21-frame time sequence tensor (updated from 11 to 21)
+    event_tensor = torch.zeros(1, 2, 21, height, width)
     
     # Fill with flow data (assume same flow across all time steps)
-    for t in range(11):
+    for t in range(21):  # Updated loop range to match 21 time steps
         event_tensor[0, 0, t] = torch.from_numpy(flow_x).float()
         event_tensor[0, 1, t] = torch.from_numpy(flow_y).float()
     
@@ -167,7 +173,11 @@ def interactive_visualization():
     )
     
     # Set up figure for animation
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    fig = plt.figure(figsize=(12, 5))
+    
+    # Create polar subplot
+    ax1 = fig.add_subplot(121, projection='polar')
+    ax2 = fig.add_subplot(122)
     
     # Initialize polar plot
     theta = np.linspace(0, 2*np.pi, accumulator.num_sectors, endpoint=False)
