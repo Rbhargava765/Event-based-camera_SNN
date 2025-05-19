@@ -27,8 +27,13 @@ class DSECDatasetLite(Dataset):
         target_file_1 = self.files.iloc[idx, 0]
         target_file_2 = self.files.iloc[idx, 1]
 
-        eventsL1 = torch.from_numpy(np.load(os.path.join(self.events_path, target_file_1)))
-        eventsL2 = torch.from_numpy(np.load(os.path.join(self.events_path, target_file_2)))
+        event_file_path1 = os.path.join(self.events_path, target_file_1)
+        print(f"Attempting to load event file 1: {os.path.abspath(event_file_path1)}") # DEBUG PRINT
+        eventsL1 = torch.from_numpy(np.load(event_file_path1))
+        
+        event_file_path2 = os.path.join(self.events_path, target_file_2)
+        print(f"Attempting to load event file 2: {os.path.abspath(event_file_path2)}") # DEBUG PRINT
+        eventsL2 = torch.from_numpy(np.load(event_file_path2))
         eventsL = torch.cat((eventsL1, eventsL2), axis = 0)
         
         if self.stereo:
@@ -38,8 +43,13 @@ class DSECDatasetLite(Dataset):
 
             eventsL = torch.cat((eventsL, eventsR), axis = 1)
         
-        mask = torch.from_numpy(np.load(os.path.join(self.mask_path, target_file_2)))
-        label = torch.from_numpy(np.load(os.path.join(self.flow_path, target_file_2)))
+        mask_file_path = os.path.join(self.mask_path, target_file_2)
+        print(f"Attempting to load mask file: {os.path.abspath(mask_file_path)}") # DEBUG PRINT
+        mask = torch.from_numpy(np.load(mask_file_path))
+        
+        label_file_path = os.path.join(self.flow_path, target_file_2)
+        print(f"Attempting to load label file: {os.path.abspath(label_file_path)}") # DEBUG PRINT
+        label = torch.from_numpy(np.load(label_file_path))
         
         if self.transform:
             eventsL = self.transform(events)
