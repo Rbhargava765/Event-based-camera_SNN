@@ -33,21 +33,27 @@ def create_sector_visualization(accumulator, frame_size=(480, 640)):
     cmap = LinearSegmentedColormap.from_list("danger_cmap", colors)
     
     # Normalize accumulator values for color mapping
-    max_value = max(1.0, np.max(accumulator.accumulators))
+    max_value = max(1.0, np.max(accumulator.accumulators)) if accumulator.accumulators.size > 0 else 1.0
     normalized_values = accumulator.accumulators / max_value
     
     # Draw each sector with appropriate color intensity
     for i, mask in enumerate(accumulator.sector_masks):
+        # Ensure mask is 2D for broadcasting with color
+        current_mask_2d = mask # mask from accumulator is already 2D HxW
+        if current_mask_2d.shape != frame_size:
+            # This case should ideally not happen if masks are generated for frame_size
+            # But as a fallback, resize mask if necessary, though it might distort sectors
+            current_mask_2d = cv2.resize(mask.astype(np.uint8), (width, height), interpolation=cv2.INTER_NEAREST).astype(bool)
+
         color_intensity = normalized_values[i]
         color = np.array(cmap(color_intensity)[0:3]) * 255
         
-        # Create a colored mask for this sector
-        colored_mask = np.zeros((height, width, 3), dtype=np.uint8)
-        for c in range(3):
-            colored_mask[:, :, c] = mask * color[c]
+        colored_mask_display = np.zeros_like(vis_img)
+        for c_idx in range(3):
+            colored_mask_display[:, :, c_idx] = current_mask_2d * color[c_idx]
         
         # Add to visualization
-        vis_img = cv2.addWeighted(vis_img, 1.0, colored_mask, 1.0, 0)
+        vis_img = cv2.addWeighted(vis_img, 1.0, colored_mask_display, 1.0, 0)
     
     # Add a center marker
     center_y, center_x = height // 2, width // 2
@@ -122,6 +128,7 @@ def visualize_with_matplotlib(accumulator):
 def generate_test_event_data(frame_size=(480, 640), flow_direction=None, magnitude=1.0):
     """
     Generate test event data with a specific flow direction.
+    Now generates 21 time steps for the original model.
     
     Args:
         frame_size: Size of the frame (height, width)
@@ -139,7 +146,7 @@ def generate_test_event_data(frame_size=(480, 640), flow_direction=None, magnitu
         flow_direction = [np.cos(angle), np.sin(angle)]
     
     # Normalize the direction
-    flow_norm = np.sqrt(flow_direction[0]**2 + flow_direction[1]**2)
+    flow_norm = np.sqrt(flow_direction[0]**2 + flow_direction[1]**2) or 1 # avoid div by zero if magnitude is 0
     flow_direction = [flow_direction[0]/flow_norm, flow_direction[1]/flow_norm]
     
     # Create directional flow tensor (x component)
@@ -149,18 +156,18 @@ def generate_test_event_data(frame_size=(480, 640), flow_direction=None, magnitu
     flow_y = np.ones((height, width)) * flow_direction[1] * magnitude
     
     # Add some noise
-    flow_x += np.random.normal(0, 0.1, (height, width))
-    flow_y += np.random.normal(0, 0.1, (height, width))
+    flow_x += np.random.normal(0, 0.1 * magnitude, (height, width)) # Noise proportional to magnitude
+    flow_y += np.random.normal(0, 0.1 * magnitude, (height, width))
     
-    # Create a 21-frame time sequence tensor (updated from 11 to 21)
+    # Create a 21-frame time sequence tensor for the original model
     event_tensor = torch.zeros(1, 2, 21, height, width)
     
     # Fill with flow data (assume same flow across all time steps)
-    for t in range(21):  # Updated loop range to match 21 time steps
+    for t in range(21):
         event_tensor[0, 0, t] = torch.from_numpy(flow_x).float()
         event_tensor[0, 1, t] = torch.from_numpy(flow_y).float()
     
-    return event_tensor
+    return event_tensor, flow_direction
 
 def interactive_visualization():
     """Run an interactive visualization of the sectorized accumulator"""
@@ -216,7 +223,7 @@ def interactive_visualization():
             flow_direction = [np.cos(angle), np.sin(angle)]
         
         # Generate test data with this flow direction
-        event_tensor = generate_test_event_data(flow_direction=flow_direction, magnitude=1.0)
+        event_tensor, _ = generate_test_event_data(flow_direction=flow_direction, magnitude=1.0)
         
         # Process through accumulator
         result = accumulator.process_event_frame(event_tensor)
@@ -237,7 +244,8 @@ def interactive_visualization():
             bar.set_color('green' if cmd_value else 'gray')
         
         # Return all artists that were updated
-        return bars + command_bars + [flow_text, threshold_line]
+        # Ensure all are converted to a single list for blitting
+        return list(bars) + list(command_bars) + [flow_text, threshold_line]
     
     # Create animation
     ani = FuncAnimation(fig, update, frames=80, interval=200, blit=True)
@@ -245,11 +253,12 @@ def interactive_visualization():
     plt.show()
 
 def main():
-    parser = argparse.ArgumentParser(description='Visualize sectorized obstacle avoidance')
-    parser.add_argument('--mode', type=str, choices=['static', 'interactive'], 
-                        default='interactive', help='Visualization mode')
-    parser.add_argument('--sectors', type=int, default=8, 
-                        help='Number of sectors for accumulation')
+    parser = argparse.ArgumentParser(description='Visualize sectorized obstacle avoidance with original SNN model')
+    parser.add_argument('--mode', type=str, choices=['static', 'interactive'], default='static', help='Visualization mode')
+    parser.add_argument('--sectors', type=int, default=8, help='Number of sectors for accumulation')
+    parser.add_argument('--threshold', type=float, default=20000.0, help='Accumulator threshold for reflex')
+    parser.add_argument('--decay', type=float, default=0.9, help='Accumulator decay rate')
+    parser.add_argument('--device', type=str, default='cuda', help='Device for SNN model (cuda/cpu)')
     args = parser.parse_args()
     
     if args.mode == 'interactive':
@@ -257,46 +266,46 @@ def main():
         return
     
     # Static visualization mode
+    print("Initializing SectorizedSpikeAccumulator with original SNN model (480x640)...")
     accumulator = SectorizedSpikeAccumulator(
         num_sectors=args.sectors,
-        threshold=2.0,
-        decay_rate=0.8,
-        device='cpu'  # Use CPU for visualization
+        threshold=args.threshold,
+        decay_rate=args.decay,
+        device=args.device
     )
     
+    cv2.namedWindow('Sector Visualization', cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Sector Visualization", 800, 600) # Resize window for 480x640 content
+
     try:
         while True:
-            # Generate random flow direction for testing
             angle = np.random.uniform(0, 2*np.pi)
             flow_direction = [np.cos(angle), np.sin(angle)]
-            print(f"Testing flow direction: [{flow_direction[0]:.2f}, {flow_direction[1]:.2f}]")
+            print(f"Testing flow direction: [{flow_direction[0]:.2f}, {flow_direction[1]:.2f}] ({(angle*180/np.pi):.1f} deg)")
             
-            # Generate test data
-            event_tensor = generate_test_event_data(flow_direction=flow_direction)
+            # Generate test data: 480x640, 21 time steps
+            event_tensor, _ = generate_test_event_data(frame_size=(480, 640), flow_direction=flow_direction, magnitude=1.0)
             
-            # Process the event tensor
             result = accumulator.process_event_frame(event_tensor)
             
-            # Print the results
-            print(f"Sector counts: {result['sector_counts']}")
+            print(f"Raw Accumulator values: {accumulator.accumulators}")
             print(f"Avoidance commands: {result['avoidance_commands']}")
             
-            # Visualize
-            vis_img = create_sector_visualization(accumulator)
+            vis_img = create_sector_visualization(accumulator, frame_size=(480, 640))
             cv2.imshow('Sector Visualization', vis_img)
             
-            # Also show matplotlib visualization
             visualize_with_matplotlib(accumulator)
             
-            key = cv2.waitKey(1000)
+            key = cv2.waitKey(2000) # Wait 2 seconds
             if key == 27:  # ESC key
                 break
                 
     except KeyboardInterrupt:
         print("Exiting...")
     
-    cv2.destroyAllWindows()
-    plt.close('all')
+    finally:
+        cv2.destroyAllWindows()
+        plt.close('all')
 
 if __name__ == "__main__":
     main() 

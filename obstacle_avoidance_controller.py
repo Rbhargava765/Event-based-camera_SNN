@@ -8,7 +8,7 @@ import os
 # Add the project directory to the path
 sys.path.append(os.path.abspath('.'))
 
-# Import the network from our patched modules
+# Import the original network from our patched modules
 from network_3d_patched.poolingNet_cat_1res import NeuronPool_Separable_Pool3d
 
 class SectorizedSpikeAccumulator:
@@ -38,20 +38,19 @@ class SectorizedSpikeAccumulator:
         self.model = self._load_model()
         
         # Define sector masks (dividing the image into angular sectors)
+        # Use 480x640 image size for working resolution
         self.sector_masks = self._create_sector_masks((480, 640))
     
     def _load_model(self):
         """Load the pre-trained SNN model for optical flow estimation"""
         model = NeuronPool_Separable_Pool3d(multiply_factor=35.0).to(self.device)
-        
-        # Load the pre-trained weights if available
         model_path = 'OF_EV_SNN-main/examples/checkpoint_epoch34.pth'
         if os.path.exists(model_path):
+            # Ensure model is on the correct device BEFORE loading state_dict
             model.load_state_dict(torch.load(model_path, map_location=self.device))
-            print(f"Loaded model from {model_path}")
+            print(f"Loaded pre-trained model from {model_path}")
         else:
-            print(f"Warning: Could not load model from {model_path}")
-        
+            print(f"Warning: Could not load pre-trained model from {model_path}")
         model.eval()
         return model
     
@@ -95,16 +94,23 @@ class SectorizedSpikeAccumulator:
         Process an event frame through the SNN and update the accumulators.
         
         Args:
-            event_tensor (torch.Tensor): Event tensor of shape [1, 2, time_steps, height, width]
+            event_tensor (torch.Tensor): Event tensor of shape [1, 2, 21, 480, 640]
         
         Returns:
             dict: Spike counts per sector and avoidance commands
         """
-        # Process through SNN model
+        # Input tensor should now be the correct size (1, 2, 21, 480, 640)
+        # No resizing needed here if input is correct.
         with torch.no_grad():
             functional.reset_net(self.model)
+            
             event_tensor = event_tensor.to(self.device)
-            _, _, _, pred = self.model(event_tensor)
+            # The original model returns a list of 4 predictions, last one is finest.
+            # If test_snn_model.py is correct, it expects: _, _, _, pred = self.model(event_tensor)
+            # However, the model's own __main__ suggests its forward returns a list [pred_4, pred_3, pred_2, pred_1]
+            # Let's assume the last element is the one we need, matching its __main__ test.
+            predictions = self.model(event_tensor) 
+            pred = predictions[-1] # Get the finest prediction (up_1)
         
         # Extract optical flow vectors (x and y components)
         flow_x = pred[0, 0].cpu().numpy()
@@ -219,27 +225,19 @@ def connect_to_px4():
 def main():
     """Main function to run the obstacle avoidance controller"""
     # Initialize the sectorized spike accumulator
-    accumulator = SectorizedSpikeAccumulator(
-        num_sectors=8,
-        threshold=0.5,
-        decay_rate=0.8,
-        device='cuda'
-    )
+    accumulator = SectorizedSpikeAccumulator(device='cuda')
     
     # Connect to ROS and PX4 (implement these functions based on your setup)
     ros_node = connect_to_ros()
     px4_connection = connect_to_px4()
     
-    print("Obstacle avoidance controller initialized successfully!")
+    print("Obstacle avoidance controller (original model, 480x640) initialized successfully!")
     print("Press Ctrl+C to exit.")
     
     try:
         while True:
-            # This is where you would read event camera data from ROS
-            # For testing, we'll create a dummy event tensor
-            event_tensor = torch.randn(1, 2, 11, 480, 640)
-            
-            # Process the event tensor
+            # Dummy event tensor with 21 time steps and 480x640 resolution
+            event_tensor = torch.randn(1, 2, 21, 480, 640) 
             result = accumulator.process_event_frame(event_tensor)
             
             # Print the results
