@@ -116,20 +116,14 @@ class ROSSpikeObstacleAvoidance:
         Returns:
             torch.Tensor: Event tensor in format [1, 2, time_steps, height, width]
         """
-        # Create a tensor with required dimensions
-        # The actual conversion will depend on your event representation
         height, width = cv_image.shape
         
-        # Create a 11-frame sequence (as required by the SNN model)
-        event_tensor = torch.zeros(1, 2, 11, height, width, dtype=torch.float32)
+        # Create a 21-frame sequence (as required by the SNN model)
+        event_tensor = torch.zeros(1, 2, 21, height, width, dtype=torch.float32)
         
-        # For demonstration, we'll just populate with the same frame repeated
-        # In a real implementation, you'd maintain a buffer of recent event frames
         normalized_frame = cv_image.astype(np.float32) / 255.0
         
-        # In a simple approach, we could use the same data for both x and y channels
-        # In reality, you might have separate x and y components of events
-        for t in range(11):
+        for t in range(21):
             event_tensor[0, 0, t] = torch.from_numpy(normalized_frame)
             event_tensor[0, 1, t] = torch.from_numpy(normalized_frame)
         
